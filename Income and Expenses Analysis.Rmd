@@ -1,0 +1,236 @@
+---
+title: "Financial Analysis Report January - July 2025"
+author: "Eniola Oyekale"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+library(readxl)
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+install.packages("scales")
+install.packages("plotly")
+install.packages("prophet")
+Jan_July_spending <- read_excel("~/Jan_July spending.xlsx", 
+                                col_types = c("date", "text", "numeric", 
+                                              "numeric", "date", "numeric"))
+View(Jan_July_spending)
+
+jan_j <- Jan_July_spending
+View(jan_j)
+
+jan_j <- clean_names(jan_j)
+view(jan_j)
+
+## Convert date
+jan_j <- jan_j %>% 
+  mutate(date = as.Date(date)) %>% 
+  filter(date >= as.Date("2025-01-01") & date <= as.Date("2025-07-31"))
+view(jan_j)
+install.packages("ggplot2")
+library(ggplot2)
+
+## Removing the missing Value
+is.na(jan_j)
+colSums(is.na(jan_j))
+
+jan_j <- na.omit(jan_j)
+colSums(is.na(jan_j))
+view(jan_j)
+
+
+## Extracting & Categorizing Transaction
+airtime_spending <- jan_j %>%
+  filter(str_detect(description, regex("airtime", ignore_case = TRUE))) %>%
+  summarise(total_airtime_spent = sum(debit, na.rm = TRUE))
+view(airtime_spending)
+
+weekly_atm <- jan_j %>%
+  filter(str_detect(description, regex("POS", ignore_case = TRUE))) %>%
+  mutate(week = week(date)) %>% 
+  group_by(week) %>% 
+  summarise(weekly_withdrawals = sum(debit, na.rm = TRUE))
+View(weekly_atm)
+
+nip_vat <- jan_j %>% 
+  filter(str_detect(description,regex("NIP", ignore_case = TRUE))) %>% 
+  summarise(charges = sum(debit, na.rm = TRUE))
+View(nip_vat)
+
+sms_charges <- jan_j %>% 
+  filter(str_detect(description,regex("SMS", ignore_case = TRUE))) %>% 
+  summarise(smc = sum(debit, na.rm = TRUE))
+View(sms_charges)
+
+other_exp <- jan_j %>% 
+  filter(str_detect(description,regex("MOB", ignore_case = TRUE))) %>% 
+  summarise(others = sum(debit, na.rm = TRUE))
+
+
+monthly_expenses <- jan_j %>%
+  mutate(month = floor_date(date, "month")) %>%
+  group_by(month) %>%
+  summarise(total_expense = sum(debit, na.rm = TRUE))
+
+## Step 1: Calculate total monthly spending
+monthly_expenses <- jan_j %>%
+  mutate(month = floor_date(date, "month")) %>%
+  group_by(month) %>%
+  summarise(total_expense = sum(debit, na.rm = TRUE)) %>%
+  mutate(z_score = scale(total_expense))  
+## Step 2: Compute z-score
+
+## Step 3: Flag spike months (z > 1.5 or 2)
+monthly_spikes <- monthly_expenses %>% filter(z_score > 1.5)
+
+## Step 4: Plot
+ggplot(monthly_expenses, aes(x = month, y = total_expense)) +
+  geom_col(fill = "Purple") +
+  geom_col(data = monthly_spikes, aes(x = month, y = total_expense), fill = "red") +
+  geom_text(aes(label = comma(total_expense)), vjust = -0.5, size = 3.5) +
+  labs(
+    title = "Monthly Spending with Spike Detection (Jan–Jul 2025)",
+    x = "Month", y = "Total Expense (₦)"
+  ) +
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+
+
+## Plot
+ggplot(monthly_expenses, aes(x = month, y = total_expense)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Monthly Expenses (Jan - Jul 2025)", x = "Month", y = "Total Expense")
+library(ggplot2)
+library(scales)
+
+ggplot(monthly_expenses, aes(x = month, y = total_expense)) +
+  geom_col(fill = "dodgerblue4") +
+  geom_text(aes(label = comma(total_expense)), vjust = -0.5, size = 3.5) +
+  labs(title = "Monthly Spending (Jan–Jul 2025)",
+       subtitle = "Clear visual of monthly expenses",
+       x = "Month", y = "Amount Spent (₦)") +
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+
+
+
+## Detecting spike
+daily_spending <- jan_j %>%
+  group_by(date) %>%
+  summarise(daily_total = sum(debit, na.rm = TRUE)) %>%
+  mutate(z_score = scale(daily_total))
+
+## Detect spikes (z > 2)
+spikes <- daily_spending %>% filter(z_score > 2)
+
+## Calculate daily spending and z-scores
+daily_spending <- jan_j %>%
+  group_by(date) %>%
+  summarise(daily_total = sum(debit, na.rm = TRUE)) %>%
+  mutate(z_score = scale(daily_total))
+
+## Flag spikes (z > 2)
+spikes <- daily_spending %>% filter(z_score > 2)
+
+## Plot daily spending with spikes highlighted
+ggplot(daily_spending, aes(x = date, y = daily_total)) +
+  geom_line(color = "Purple", size = 1) +
+  geom_point(data = spikes, aes(x = date, y = daily_total), color = "red", size = 3) +
+  labs(
+    title = "Daily Spending & Spike Detection (Jan–Jul 2025)",
+    x = "Date",
+    y = "Amount Spent (₦)"
+  ) +
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+## D. Top 10 Spend Categories/Vendors
+top_10 <- jan_j %>%
+  group_by(description) %>%
+  summarise(total_spent = sum(debit, na.rm = TRUE)) %>%
+  arrange(desc(total_spent)) %>%
+  slice_head(n = 10)
+print(top_10)
+
+
+## Create a horizontal bar chart
+ggplot(top_10, aes(x = reorder(description, total_spent), y = total_spent)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = comma(total_spent)), hjust = -0.1, size = 3.5) +
+  labs(
+    title = "Top 10 Spending Descriptions (Jan–Jul 2025)",
+    x = "Transaction Description",
+    y = "Total Spent (₦)"
+  ) +
+  scale_y_continuous(labels = comma) +
+  coord_flip() +
+  theme_minimal()
+
+
+jan_j %>%
+  mutate(day = wday(date, label = TRUE)) %>%
+  group_by(day) %>%
+  summarise(daily_total = sum(debit, na.rm = TRUE)) %>%
+  ggplot(aes(x = day, y = daily_total)) +
+  geom_col(fill = "darkorange") +
+  labs(title = "Spending by Day of Week")
+
+## Monthly income (inflow) & expenses (outflow)
+monthly_flow <- jan_j %>%
+  mutate(month = floor_date(date, "month")) %>%
+  group_by(month) %>%
+  summarise(income = sum(credit, na.rm = TRUE),
+            expenses = sum(debit, na.rm = TRUE)) %>%
+  mutate(balance = income - expenses)
+
+## Plotting
+ggplot(monthly_flow, aes(x = month)) +
+  geom_col(aes(y = income), fill = "darkgreen", alpha = 0.7) +
+  geom_col(aes(y = -expenses), fill = "firebrick", alpha = 0.7) +
+  geom_line(aes(y = balance), color = "black", size = 1) +
+  labs(title = "Monthly Income vs. Expenses",
+       y = "₦", x = "Month") +
+  theme_minimal()
+
+## Forcast Next Month's Expenses 
+install.packages("prophet")
+library(prophet)
+
+## Prepare data for Prophet
+monthly_ts <- jan_j %>%
+  mutate(month = floor_date(date, "month")) %>%
+  group_by(month) %>%
+  summarise(y = sum(debit, na.rm = TRUE)) %>%
+  rename(ds = month)
+
+## Fit and forecast
+august <- prophet(monthly_ts)
+future <- make_future_dataframe(august, periods = 1, freq = "month")
+forecast <- predict(august, future)
+
+## Plot
+prophet_plot_components(august, forecast)
+
+## 1. Basic Prophet forecast
+forecast <- predict(august)
+
+## 2. Plot manually with ggplot2 and purple line
+
+## Trend component visualization in purple
+ggplot(forecast, aes(x = ds, y = trend)) +
+  geom_line(color = "purple", size = 1.2) +
+  labs(
+    title = "Forecasted Monthly Spending Trend",
+    x = "Month",
+    y = "Forecasted Amount (₦)"
+  ) +
+  theme_minimal()
